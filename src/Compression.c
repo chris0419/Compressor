@@ -1,52 +1,59 @@
 //ADD eader information here
-
-
 #include "compression.h"
 
-void errorChecking(int status, char * msg)
+void errorChecker(int status, char * msg)
 {
 	if (status < 0)
 	{
-		cerr <<  msg << strerror(status) << endl;
-		exit(0);
+		perror(msg);
+		exit(1);
 	}
 
 }
 
 int main() {
-	struct sockaddr_in server_address;
-	struct sockaddr_in client_address;
+	struct sockaddr_in serverAddress;
+	struct sockaddr_in clientAddress;
 	int serverSocket;
+	int clientSocket;
+	socklen_t clientSocketSize;
 	int status;
+	char stringBuffer[256];
 
 	//Get the TCP socket  with the IPv4 Address family
 	serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+	errorChecker (serverSocket, "ERROR ACQUIRING SOCKET");
 
-	if (serverSocket < 0)
-	{
-		cerr <<  "ERROR ACQUIRING SOCKET. ERROR #" << strerror(serverSocket) << endl;
-	}
+	serverAddress.sin_family = AF_INET;
+	serverAddress.sin_addr.s_addr = INADDR_ANY;
+	serverAddress.sin_port = htons(500);
 
-
-	server_address.sin_family = AF_INET;
-	server_address.sin_addr.s_addr = INADDR_ANY;
-	server_address.sin_port = htons(500);
-
-	status = bind(serverSocket, (struct sockaddr *) &serverSocket, sizeof(serverSocket));
-
-
+	status = bind(serverSocket, (struct sockaddr*) &serverAddress, sizeof(serverAddress));
+	errorChecker(status, "ERROR BINDING SOCKET WITH ADDRESS");
 
 	//wait until you get a response
 	status = listen(serverSocket, 1);
-	if (status < 0)
-	{
-		cerr <<  "ERROR LISTENING FOR SOCKET. ERROR #" << strerror(status) << endl;
-	}
+	errorChecker(status, "ERROR LISTENING FOR SOCKET");
 
+
+	while(1)
+	{
+		clientSocketSize = sizeof(clientAddress);
+		clientSocket = accept(serverSocket, (struct sockaddr*) &clientAddress, &clientSocketSize);
+		errorChecker(clientSocket, "ERROR ACCEPTING CLIENT SOCKET");
+
+		status = read(clientSocket, stringBuffer, 255);
+		errorChecker(status, "ERROR READING FROM CLIENT");
+
+		status = write(clientSocket, "Welcome!", 9);
+		errorChecker(status, "ERROR WRITING TO CLIENT");
+
+		printf("%s\n", stringBuffer);
+	}
 
 
 
 	return 0;
 }
-IT_SUCCESS;
-}
+
+
