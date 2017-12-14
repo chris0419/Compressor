@@ -1,6 +1,78 @@
 //ADD eader information here
 #include "compression.h"
 
+
+
+void parseReadData(int socket)
+{
+	int status;
+	int magicNumber;
+	int payloadlen;
+	int RCval;
+	char stringBuffer [256];
+	char *end;
+
+	status = read(socket, stringBuffer, 10);
+	errorChecker(status, "ERROR READING FROM MAGIC HEADER");
+	magicNumber = (int)strtol(stringBuffer, &end, 0);
+
+	if (*end != '\0')
+	{
+		//RESET this to be an soft error not a hard error.
+		errorChecker(-1, "HEADER doesn't start with 0x or is not a number");
+	}
+
+	else if (magicNumber != MGN)
+	{
+		errorChecker(-1, "HEADER DOESNT CONTAIN 0x53545259");
+	}
+
+	memset(stringBuffer, 0, sizeof(stringBuffer));
+	status = read(socket, stringBuffer, 2);
+	errorChecker(status, "ERROR READING PAYLOAD LENGTH");
+	payloadlen = (int) strtol(stringBuffer, &end, 0);
+
+	if (*end != '\0')
+	{
+		errorChecker(-1, "Payload Length was not a number or ");
+	}
+
+	else if (payloadlen <= MAX_PAYLOAD_LEN)
+	{
+		errorChecker(-1, "PayLoad Length was over 32KB");
+	}
+
+	status = read(socket, stringBuffer, 2);
+	errorChecker(status, "ERROR READING RC OF HEADER");
+	RCval = (int) strtol(stringBuffer, &end, 0);
+
+	if (*end != '\0')
+	{
+		errorChecker(-1, "RC number was not a number or ");
+	}
+
+	switch (RCval)
+	{
+		case 1: //todo add  ping message
+			break;
+		case 2:
+			//todo add statistics
+			break;
+		case 3:
+			//todo reset stats
+			break;
+		case 4:
+			//todo compression algorithmn
+			break;
+		default:
+			errorChecker(-1, "ERROR GETTING REQUEST VALUE");
+	}
+
+	return;
+
+}
+
+
 void errorChecker(int status, char * msg)
 {
 	if (status < 0)
@@ -26,7 +98,7 @@ int main() {
 
 	serverAddress.sin_family = AF_INET;
 	serverAddress.sin_addr.s_addr = INADDR_ANY;
-	serverAddress.sin_port = htons(500);
+	serverAddress.sin_port = htons(PORTNUM);
 
 	status = bind(serverSocket, (struct sockaddr*) &serverAddress, sizeof(serverAddress));
 	errorChecker(status, "ERROR BINDING SOCKET WITH ADDRESS");
@@ -41,14 +113,11 @@ int main() {
 		clientSocketSize = sizeof(clientAddress);
 		clientSocket = accept(serverSocket, (struct sockaddr*) &clientAddress, &clientSocketSize);
 		errorChecker(clientSocket, "ERROR ACCEPTING CLIENT SOCKET");
+		parseReadData(clientSocket);
 
-		status = read(clientSocket, stringBuffer, 255);
-		errorChecker(status, "ERROR READING FROM CLIENT");
 
-		status = write(clientSocket, "Welcome!", 9);
-		errorChecker(status, "ERROR WRITING TO CLIENT");
 
-		printf("%s\n", stringBuffer);
+
 	}
 
 
