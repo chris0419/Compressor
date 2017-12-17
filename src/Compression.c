@@ -2,70 +2,149 @@
 #include "compression.h"
 
 
+void sendResponse(int socket, char* message)
+{
+	char header[9];
+	char payloadlen[3];
+	char statusCode[3];
+	char* response;
+	int bytesSent;
+
+	sprintf(header, "%x", htonl(MGN));
+	sprintf(payloadlen,"%02X", htons(strlen(message)));
+	sprintf(statusCode,"%02X", htons(cStat.errorCode));
+
+	//Calculate the size of the header + the message/payload
+	bytesSent = strlen(header) + strlen(payloadlen) + strlen(statusCode) + strlen(message) + 1;
+	response = malloc(bytesSent);
+
+	if (response == NULL)
+	{
+		cStat.errorCode = LOW_MEM_ERR;
+		return;
+	}
+
+	//put the header, payload length, status, plus payload into the full message
+	response = strcat(response, header);
+	response = strcat(response, payloadlen);
+	response = strcat(response, statusCode);
+	response = strcat(response, message);
+
+	send(socket, response, strlen(response), 0);
+
+	//Increse the counts send
+	cStat.bytesSent += bytesSent;
+	free (response);
+}
+
+void getStats(int socket)
+{
+	char bytesSent[33];
+	char bytesRec[33];
+	char ratio[2];
+	char message[66];
+
+	sprintf(bytesSent,"%08X", ntohl(cStat.bytesSent));
+	sprintf(bytesRec, "%08X", ntohl(cStat.bytesRead));
+
+	if (cStat.bytesSent <= 0)
+	{
+		sprintf(ratio, "%01X", ntohs(1));
+	}
+	else
+	{
+		sprintf(ratio, "%01X", ntohs(cStat.bytesSent/cStat.bytesRead * 100));
+	}
+
+
+	strcat(message, bytesSent);
+	strcat(message, bytesRec);
+	strcat(message, ratio);
+
+	sendResponse(socket, message);
+}
+
+void reset(int socket){
+	initializeStatus();
+	sendResponse(socket, "\0");
+}
 
 void parseReadData(int socket)
 {
 	int status;
-	int magicNumber;
-	int payloadlen;
-	int RCval;
-	char stringBuffer [256];
+	uint32_t magicNumber;
+	uint16_t payloadlen;
+	uint16_t RCval;
+	char stringBuffer[64];
 	char *end;
 
-	status = read(socket, stringBuffer, 10);
-	errorChecker(status, "ERROR READING FROM MAGIC HEADER");
-	magicNumber = (int)strtol(stringBuffer, &end, 0);
-
-	if (*end != '\0')
-	{
-		//RESET this to be an soft error not a hard error.
-		errorChecker(-1, "HEADER doesn't start with 0x or is not a number");
-	}
-
-	else if (magicNumber != MGN)
-	{
-		errorChecker(-1, "HEADER DOESNT CONTAIN 0x53545259");
-	}
-
+	//Get the magic number header number
 	memset(stringBuffer, 0, sizeof(stringBuffer));
-	status = read(socket, stringBuffer, 2);
-	errorChecker(status, "ERROR READING PAYLOAD LENGTH");
-	payloadlen = (int) strtol(stringBuffer, &end, 0);
-
-	if (*end != '\0')
+	status = read(socket, stringBuffer, 10);
+	if (status < 10)				//The header read less than 10 bytes. The entire packet was too short.
 	{
-		errorChecker(-1, "Payload Length was not a number or ");
+		cStat.errorCode = HEADER_PARSING_ERR;
+	}
+	cStat.bytesSent += status;
+	magicNumber = (uint32_t)strtol(stringBuffer, &end, 16);
+	magicNumber = (uint32_t)ntohl(magicNumber);
+	if ((*end != '\0') || (magicNumber != MGN))
+	{
+		cStat.errorCode = HEADER_MAGIC_ERR;
 	}
 
-	else if (payloadlen <= MAX_PAYLOAD_LEN)
+
+	//Get the payload length
+	memset(stringBuffer, 0, sizeof(stringBuffer));
+	status = read(socket, stringBuffer, 4);
+	if (status < 2)
 	{
-		errorChecker(-1, "PayLoad Length was over 32KB");
+		cStat.errorCode = HEADER_PARSING_ERR;
 	}
-
-	status = read(socket, stringBuffer, 2);
-	errorChecker(status, "ERROR READING RC OF HEADER");
-	RCval = (int) strtol(stringBuffer, &end, 0);
-
+	cStat.bytesSent += status;
+	payloadlen = (uint16_t) strtol(stringBuffer, &end, 16);
+	payloadlen = ntohs((uint16_t)payloadlen);
 	if (*end != '\0')
 	{
-		errorChecker(-1, "RC number was not a number or ");
+		cStat.errorCode = HEADER_SIZE_ERR;
+	}
+
+	else if (payloadlen >= MAX_PAYLOAD_LEN)
+	{
+		cStat.errorCode = MSG_SIZE_ERR;
+	}
+
+
+	//Get the RC code
+	memset(stringBuffer, 0, sizeof(stringBuffer));
+	status = read(socket, stringBuffer, 4);
+	if (status < 2)
+	{
+		cStat.errorCode = HEADER_PARSING_ERR;
+	}
+	cStat.bytesSent += status;
+	RCval = (uint16_t) strtol(stringBuffer, &end, 16);
+	RCval = ntohs(RCval);
+	if (*end != '\0')
+	{
+		cStat.errorCode = HEADER_RC_ERR;
 	}
 
 	switch (RCval)
 	{
-		case 1: //todo add  ping message
+		case 1: //todo add ping messages
 			break;
 		case 2:
-			//todo add statistics
+			getStats(socket);
 			break;
 		case 3:
-			//todo reset stats
+			reset(socket);
 			break;
 		case 4:
 			//todo compression algorithmn
 			break;
 		default:
-			errorChecker(-1, "ERROR GETTING REQUEST VALUE");
+			cStat.errorCode = HEADER_RC_ERR;
 	}
 
 	return;
@@ -82,6 +161,13 @@ void errorChecker(int status, char * msg)
 	}
 
 }
+//initialize the inital members of status structure
+void initializeStatus()
+{
+	cStat.errorCode = OK_STATUS;
+	cStat.bytesRead = 0;
+	cStat.bytesSent = 0;
+}
 
 int main() {
 	struct sockaddr_in serverAddress;
@@ -90,7 +176,8 @@ int main() {
 	int clientSocket;
 	socklen_t clientSocketSize;
 	int status;
-	char stringBuffer[256];
+
+	initializeStatus();
 
 	//Get the TCP socket  with the IPv4 Address family
 	serverSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -114,13 +201,7 @@ int main() {
 		clientSocket = accept(serverSocket, (struct sockaddr*) &clientAddress, &clientSocketSize);
 		errorChecker(clientSocket, "ERROR ACCEPTING CLIENT SOCKET");
 		parseReadData(clientSocket);
-
-
-
-
 	}
-
-
 
 	return 0;
 }
