@@ -1,6 +1,143 @@
 //ADD eader information here
 #include "compression.h"
 
+char* compressionResponse(char *response, struct Entry* head)
+{
+	struct Entry* node;
+	char chalkboard[3];
+
+	node = head;
+	while(node != NULL)
+	{
+		if (node->count == 1)
+		{
+			sprintf(chalkboard, "%c", node->character);
+		}
+		else if (node->count == 2)
+		{
+			sprintf(chalkboard, "%c%c", node->character, node->character);
+		}
+		else
+		{
+			sprintf(chalkboard, "%d%c",node->count, node->character);
+
+		}
+		node = node->next;
+		strcat(response, chalkboard);
+	}
+
+	return response;
+}
+
+int encoding(struct Entry *head, char* message)
+{
+	struct Entry* temp;
+	struct Entry* node;
+	char character;
+	char *letter;
+	int counter;
+
+
+	node = head;
+	character = *message;
+	counter = 0;
+
+
+	for (letter = message; *letter != '\0'; letter++)
+	{
+		if (character <= '0' && character >= '9')
+		{
+			return PAYLOAD_INT_ERR;
+		}
+
+		else if (character >= 'A' && character <= 'Z')
+		{
+			return PAYLOAD_CAP_ERR;
+		}
+
+		else if (character < 'a' && character > 'z')
+		{
+			return PAYLOAD_INVALID_ERR;
+		}
+		else if ((character != *letter) || (*(letter + 1) == '\0'))
+		{
+			if ((*(letter + 1) == '\0') && character == *letter) //handles an edge case
+				counter++;
+
+			//add it to the linked list and increase the size
+			temp = (struct Entry *) malloc(sizeof(struct Entry));
+			temp->character = character;
+			temp->count = counter;
+			temp->next = NULL;
+			head->count += 1;
+			node->next = temp;
+			node = temp;
+
+			//reset Counter and the Character in question
+			counter = 1;
+			character = *letter;
+		}
+		else
+		{
+			counter++;
+		}
+	}
+
+	return OK_STATUS;
+
+}
+void compression(int socket, uint16_t payloadLen)
+{
+	struct Entry head;
+	char *message;
+	char *response;
+	int status;
+
+	message = (char *)malloc(payloadLen + 1);
+	if(message == NULL)
+	{
+		//todo must send do someting with this error
+		cStat.errorCode = LOW_MEM_ERR;
+	}
+
+	//read the data
+	status = read(socket, message, payloadLen + 1);
+	if (status < payloadLen)				//The header read less than 10 bytes. The entire packet was too short.
+	{
+		cStat.errorCode = HEADER_SIZE_ERR;
+	}
+
+	//parse the data
+	head.character = '\0';
+	head.count = 0;
+	head.next = NULL;
+	cStat.errorCode = encoding(&head, message);
+
+	//Create response message
+	if (cStat.errorCode == PAYLOAD_INT_ERR)
+	{
+		response = (char*) malloc();
+
+	}
+	else if (cStat.errorCode == PAYLOAD_CAP_ERR)
+	{
+
+	}
+	else if (cStat.errorCode == PAYLOAD_INVALID_ERR)
+	{
+
+	}
+	else
+	{
+		response = (char*) malloc((head.count * 2) + 1); //allocate 2 bytes for every entry
+		response = compressionResponse(response, head.next);
+		sendResponse(socket, response);
+
+	}
+
+	free(response);
+	free(message);
+}
 
 void sendResponse(int socket, char* message)
 {
@@ -11,12 +148,12 @@ void sendResponse(int socket, char* message)
 	int bytesSent;
 
 	sprintf(header, "%x", htonl(MGN));
-	sprintf(payloadlen,"%02X", htons(strlen(message)));
-	sprintf(statusCode,"%02X", htons(cStat.errorCode));
+	sprintf(payloadlen,"%04X", htons(strlen(message)));
+	sprintf(statusCode,"%04X", htons(cStat.errorCode));
 
 	//Calculate the size of the header + the message/payload
 	bytesSent = strlen(header) + strlen(payloadlen) + strlen(statusCode) + strlen(message) + 1;
-	response = malloc(bytesSent);
+	response = (char *)malloc(bytesSent);
 
 	if (response == NULL)
 	{
@@ -49,11 +186,11 @@ void getStats(int socket)
 
 	if (cStat.bytesSent <= 0)
 	{
-		sprintf(ratio, "%01X", ntohs(1));
+		sprintf(ratio, "%02X", ntohs(1));
 	}
 	else
 	{
-		sprintf(ratio, "%01X", ntohs(cStat.bytesSent/cStat.bytesRead * 100));
+		sprintf(ratio, "%02X", ntohs(cStat.bytesSent/cStat.bytesRead * 100));
 	}
 
 
@@ -69,6 +206,8 @@ void reset(int socket){
 	sendResponse(socket, "\0");
 }
 
+
+//todo, when there is a problem. Give an appropiate response.
 void parseReadData(int socket)
 {
 	int status;
@@ -96,8 +235,8 @@ void parseReadData(int socket)
 
 	//Get the payload length
 	memset(stringBuffer, 0, sizeof(stringBuffer));
-	status = read(socket, stringBuffer, 4);
-	if (status < 2)
+	status = read(socket, stringBuffer, MAX_PAYSTAT_BYTE);
+	if (status < MAX_PAYSTAT_BYTE)
 	{
 		cStat.errorCode = HEADER_PARSING_ERR;
 	}
@@ -117,8 +256,8 @@ void parseReadData(int socket)
 
 	//Get the RC code
 	memset(stringBuffer, 0, sizeof(stringBuffer));
-	status = read(socket, stringBuffer, 4);
-	if (status < 2)
+	status = read(socket, stringBuffer, MAX_PAYSTAT_BYTE);
+	if (status < MAX_PAYSTAT_BYTE)
 	{
 		cStat.errorCode = HEADER_PARSING_ERR;
 	}
@@ -142,6 +281,7 @@ void parseReadData(int socket)
 			break;
 		case 4:
 			//todo compression algorithmn
+			compression(socket, payloadlen);
 			break;
 		default:
 			cStat.errorCode = HEADER_RC_ERR;
