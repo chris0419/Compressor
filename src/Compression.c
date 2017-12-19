@@ -394,9 +394,11 @@ void parseReadData(int socket, int serverSocket)
 			compression(socket, payloadlen);
 			break;
 		case 5:
+			/**
 			printf("Closing Service");
 			close(serverSocket);
 			exit(EXIT_SUCCESS);
+			**/
 		default:
 			cStat.errorCode = HEADER_RC_ERR;
 			sendStatus(socket);
