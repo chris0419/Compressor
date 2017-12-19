@@ -1,8 +1,7 @@
 /*
- * error.h
+ * Created By: Christopher Rivera Reyes
  *
- *  Created on: Dec 13, 2017
- *      Author: chris
+ * ERROR header full of error codes.
  */
 
 #ifndef ERROR__H

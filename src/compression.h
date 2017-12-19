@@ -1,3 +1,9 @@
+/*
+ * Created By: Christopher Rivera Reyes
+ *
+ * Compression header that contains everything
+ * needed for the executable.
+ */
 #ifndef COMPRESSION__H
 #define COMPRESSION__H
 
@@ -33,7 +39,7 @@ struct Entry{
 
 //PROTOTYPEs
 void errorChecker(int, char *);
-void parseReadData(int);
+void parseReadData(int, int);
 void initializeStatus();
 void compression(int, uint16_t);
 int encoding(struct Entry *, char*);

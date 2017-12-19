@@ -1,5 +1,12 @@
-//Include Header information to every method
+/**
+ * Created By:Christopher Rivera Reyes
+ *
+ * A compression service which recieves data over a
+ * TCP socket.
+ */
 #include "compression.h"
+
+
 /**
  * Returns an error string back to the caller
  */
@@ -73,7 +80,6 @@ char* compressionResponse(char *response, struct Entry* head)
 		node = node->next;
 		strcat(response, chalkboard);
 	}
-
 	return response;
 }
 
@@ -106,6 +112,7 @@ int encoding(struct Entry *head, char* message)
 	character = *message;
 	counter = 0;
 
+	//For every letter in the message, compare to the previous letter
 	for (letter = message; *letter != '\0'; letter++)
 	{
 		if (character <= '0' && character >= '9')
@@ -175,8 +182,8 @@ void compression(int socket, uint16_t payloadLen)
 		status = read(socket, message, bytesLeft);
 		bytesLeft -= status;
 	} while(bytesLeft);
-
 	cStat.bytesRead += payloadLen;
+
 	//parse the data
 	head.character = '\0';
 	head.count = 0;
@@ -191,7 +198,8 @@ void compression(int socket, uint16_t payloadLen)
 	}
 	else
 	{
-		response = (char*) malloc(payloadLen); //allocate 2 bytes for every entry
+		//allocate enough memory for the message then slim it down to save mem
+		response = (char*) malloc(payloadLen);
 		if (response ==  NULL)
 		{
 			cStat.errorCode = LOW_MEM_ERR;
@@ -202,6 +210,7 @@ void compression(int socket, uint16_t payloadLen)
 		sendResponse(socket, response);
 	}
 
+	//free all the dynamic memory
 	destroyLL(head.next);
 	free(response);
 	free(message);
@@ -240,7 +249,7 @@ void sendResponse(int socket, char* message)
 
 	send(socket, response, bytesSent, 0);
 
-	//Increse the counts send
+	//Increse the counter of bytes sent and free memory
 	cStat.bytesSent += bytesSent;
 	free (response);
 }
@@ -256,6 +265,7 @@ void getStats(int socket)
 	char ratio[3];
 	char message[18];
 
+	//clear the array with null chars
 	memset(bytesSent, '\0', sizeof(bytesSent));
 	memset(bytesRec,'\0', sizeof(bytesRec));
 	memset(ratio, '\0', sizeof(ratio));
@@ -264,9 +274,10 @@ void getStats(int socket)
 	sprintf(bytesSent,"%08X", ntohl(cStat.bytesSent));
 	sprintf(bytesRec, "%08X", ntohl(cStat.bytesRead));
 
+	//If no bytes were sent then the ratio is 0
 	if (cStat.bytesSent <= 0)
 	{
-		sprintf(ratio, "%02X", 1);
+		sprintf(ratio, "%02X", 0);
 	}
 	else
 	{
@@ -294,7 +305,7 @@ void reset(int socket)
  * followed by the payload length and RC code. If an error occurs parsing the
  * header then a right error response will be sent.
  */
-void parseReadData(int socket)
+void parseReadData(int socket, int serverSocket)
 {
 	int status;
 	uint32_t magicNumber;
@@ -303,7 +314,7 @@ void parseReadData(int socket)
 	char stringBuffer[64];
 	char *end;
 
-	//Get the magic number header number
+	//Get the magic number header number and confirming that it's the magic number
 	memset(stringBuffer, 0, sizeof(stringBuffer));
 	status = read(socket, stringBuffer, 8);
 	if (status < 8)		//The header read less than 8 bytes. The entire packet was too short.
@@ -358,6 +369,7 @@ void parseReadData(int socket)
 	if (*end != '\0')
 	{
 		cStat.errorCode = HEADER_RC_ERR;
+		return sendStatus(socket);
 	}
 
 	switch (RCval)
@@ -374,6 +386,10 @@ void parseReadData(int socket)
 		case 4:
 			compression(socket, payloadlen);
 			break;
+		case 5:
+			printf("Closing Service");
+			close(serverSocket);
+			exit(EXIT_SUCCESS);
 		default:
 			cStat.errorCode = HEADER_RC_ERR;
 			sendStatus(socket);
@@ -391,7 +407,9 @@ void errorChecker(int status, char * msg)
 	}
 
 }
-//initialize the inital members of status structure
+/**
+ * initialize the inital members of status structure
+ */
 void initializeStatus()
 {
 	cStat.errorCode = OK_STATUS;
@@ -399,6 +417,9 @@ void initializeStatus()
 	cStat.bytesSent = 0;
 }
 
+/**
+ * Setups the socket necessary for data transfer, and waits for a response
+ */
 int main() {
 	struct sockaddr_in serverAddress;
 	struct sockaddr_in clientAddress;
@@ -408,6 +429,7 @@ int main() {
 	int status;
 
 	initializeStatus();
+	printf("Service Initialized.\n");
 
 	//Get the TCP socket  with the IPv4 Address family
 	serverSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -416,6 +438,7 @@ int main() {
 	serverAddress.sin_family = AF_INET;
 	serverAddress.sin_addr.s_addr = INADDR_ANY;
 	serverAddress.sin_port = htons(PORTNUM);
+	printf("Listening on PORTNUM %d.\n", PORTNUM);
 
 	status = bind(serverSocket, (struct sockaddr*) &serverAddress, sizeof(serverAddress));
 	errorChecker(status, "ERROR BINDING SOCKET WITH ADDRESS");
@@ -424,16 +447,16 @@ int main() {
 	status = listen(serverSocket, 10);
 	errorChecker(status, "ERROR LISTENING FOR SOCKET");
 
-
 	while(1)
 	{
 		clientSocketSize = sizeof(clientAddress);
+		printf("Waiting for client...\n");
 		clientSocket = accept(serverSocket, (struct sockaddr*) &clientAddress, &clientSocketSize);
 		errorChecker(clientSocket, "ERROR ACCEPTING CLIENT SOCKET");
-		parseReadData(clientSocket);
+		parseReadData(clientSocket, serverSocket);
+		printf("Data sent to the client");
 		close(clientSocket);
 	}
-
 	return 0;
 }
 
