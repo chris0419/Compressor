@@ -1,7 +1,7 @@
 #This is the makefile for the compressor executable.
 
 CC=gcc
-CFLAGS=-Isrc/ -Ibuild/
+CFLAGS=-Isrc/ -Ibuild/ -Wall -Werror
 BIN=bin/
 BUILD=build/
 SRC=src/

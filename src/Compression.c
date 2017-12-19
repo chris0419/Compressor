@@ -168,6 +168,13 @@ void compression(int socket, uint16_t payloadLen)
 	int status;
 	int bytesLeft;
 
+	//Check if the payloadlen
+	if (payloadLen < MIN_PAYLOAD_LEN)
+	{
+		cStat.errorCode = MSG_SIZE_ERR;
+		return sendStatus(socket);
+	}
+
 	message = (char *)malloc(payloadLen + 1);
 	if(message == NULL)
 	{
