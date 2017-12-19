@@ -175,13 +175,8 @@ void compression(int socket, uint16_t payloadLen)
 		status = read(socket, message, bytesLeft);
 		bytesLeft -= status;
 	} while(bytesLeft);
-//	if (status < payloadLen /*|| status < MIN_PAYLOAD_LEN*/)
-//	{
-//		cStat.errorCode = HEADER_SIZE_ERR;
-//		return sendStatus(socket);
-//	}
-	cStat.bytesRead += status;
 
+	cStat.bytesRead += payloadLen;
 	//parse the data
 	head.character = '\0';
 	head.count = 0;
@@ -196,12 +191,18 @@ void compression(int socket, uint16_t payloadLen)
 	}
 	else
 	{
-		response = (char*) malloc((head.count * 2) + 1); //allocate 2 bytes for every entry
+		response = (char*) malloc(payloadLen); //allocate 2 bytes for every entry
+		if (response ==  NULL)
+		{
+			cStat.errorCode = LOW_MEM_ERR;
+			return sendStatus(socket);
+		}
 		response = compressionResponse(response, head.next);
+		response = (char*) realloc(response, strlen(response));
 		sendResponse(socket, response);
 	}
 
-	destroyLL(&head);
+	destroyLL(head.next);
 	free(response);
 	free(message);
 }
@@ -269,7 +270,7 @@ void getStats(int socket)
 	}
 	else
 	{
-		sprintf(ratio, "%02X", (cStat.bytesSent/cStat.bytesRead * 100));
+		sprintf(ratio, "%02X", (int)((float)cStat.bytesSent/cStat.bytesRead *100));
 	}
 
 	strcat(message, bytesSent);
